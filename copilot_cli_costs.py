@@ -21,7 +21,6 @@ import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from glob import glob
 from pathlib import Path
 
 # -- Pricing (USD per 1M tokens). Source:
@@ -186,7 +185,7 @@ def fmt_int(n: int | float) -> str:
     return f"{int(n):>12,}"
 
 
-def header(title: str, length:int) -> None:
+def header(title: str, length: int) -> None:
     print()
     print()
     print(f"=== {title} {'=' * (length - len(title) - 5)}")
@@ -210,8 +209,8 @@ def print_session_table(sessions: list[SessionStats]) -> None:
                     "cacheWriteTokens": s.cache_write,
                 },
             )
-            est_aic = f"{est*100:11.3f}" if est is not None else "       n/a "
-            act_aic = f"{s.nano_aiu/1e9:11.3f}" if s.nano_aiu else "        -  "
+            est_aic = f"{est * 100:11.3f}" if est is not None else "       n/a "
+            act_aic = f"{s.nano_aiu / 1e9:11.3f}" if s.nano_aiu else "        -  "
             print(
                 f"{date:10}  {sess.session_id:36}  {model:20}  {s.requests:>5}  "
                 f"{fmt_int(s.input)}  {fmt_int(s.output)}  {fmt_int(s.cache_read)}  "
@@ -259,9 +258,9 @@ def print_monthly(sessions: list[SessionStats]) -> None:
                 f"{fmt_int(s.cache_write)}  {est_aic:12.3f}  "
                 f"{act_aic:12.3f}"
             )
-        print(f"{'-'*33:>129}")
+        print(f"{'-' * 33:>129}")
         print(
-            f"{'TOTAL':>101}  {m_est:12.3f}  {m_act:12.3f}   (${m_est/100:.2f} est / ${m_act/100:.2f} actual)"
+            f"{'TOTAL':>101}  {m_est:12.3f}  {m_act:12.3f}   (${m_est / 100:.2f} est / ${m_act / 100:.2f} actual)"
         )
         print()
 
@@ -298,17 +297,15 @@ def print_totals(sessions: list[SessionStats]) -> None:
             f"{est_str}  {act_aic:12.3f}"
         )
     print("-" * len(hdr))
-    print(
-        f"{'TOTAL':>88}  {total_est:12.3f}  {total_act:12.3f}"
-    )
+    print(f"{'TOTAL':>88}  {total_est:12.3f}  {total_act:12.3f}")
 
     header("Summary", 107)
     print(f"Sessions analysed: {len(sessions)}")
     print(
-        f"Estimated cost (post-June pricing):  {total_est:>10,.2f} AIC  = ${total_est/100:>8,.2f} USD"
+        f"Estimated cost (post-June pricing):  {total_est:>10,.2f} AIC  = ${total_est / 100:>8,.2f} USD"
     )
     print(
-        f"Actual charged (nano-AIU/1e9):       {total_act:>10,.2f} AIC  = ${total_act/100:>8,.2f} USD"
+        f"Actual charged (nano-AIU/1e9):       {total_act:>10,.2f} AIC  = ${total_act / 100:>8,.2f} USD"
         f"   (only for sessions that recorded it)"
     )
 
@@ -333,7 +330,9 @@ def main() -> int:
     )
 
     print()
-    print("GitHub Copilot CLI cost estimation  --  (c) 2026 Martin van der Werff  (github at newinnovations.nl)")
+    print(
+        "GitHub Copilot CLI cost estimation  --  (c) 2026 Martin van der Werff  (github at newinnovations.nl)"
+    )
 
     print_session_table(sessions)
     print_monthly(sessions)
