@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 """
 Estimate the cost of all Copilot IDE sessions found in ~/.copilot/session-state.
 
@@ -185,8 +186,16 @@ def fmt_int(n: int | float) -> str:
     return f"{int(n):>12,}"
 
 
+def header(title: str, length:int) -> None:
+    print()
+    print()
+    print(f"=== {title} {'=' * (length - len(title) - 5)}")
+    print()
+
+
 def print_session_table(sessions: list[SessionStats]) -> None:
-    hdr = f"{'Date':10}  {'Session':36}  {'Model':20}  {'Reqs':>5}  {'Input':>12}  {'Output':>12}  {'CacheR':>12}  {'CacheW':>12}  {'est AIC':>9}  {'actual AIC':>11}"
+    header("Per-session breakdown", 159)
+    hdr = f"{'Date':10}  {'Session':36}  {'Model':20}  {'Reqs':>5}  {'Input':>12}  {'Output':>12}  {'CacheR':>12}  {'CacheW':>12}  {'est AIC':>11}  {'actual AIC':>11}"
     print(hdr)
     print("-" * len(hdr))
     for sess in sessions:
@@ -201,7 +210,7 @@ def print_session_table(sessions: list[SessionStats]) -> None:
                     "cacheWriteTokens": s.cache_write,
                 },
             )
-            est_aic = f"{est*100:9.3f}" if est is not None else "     n/a "
+            est_aic = f"{est*100:11.3f}" if est is not None else "       n/a "
             act_aic = f"{s.nano_aiu/1e9:11.3f}" if s.nano_aiu else "        -  "
             print(
                 f"{date:10}  {sess.session_id:36}  {model:20}  {s.requests:>5}  "
@@ -223,10 +232,8 @@ def print_monthly(sessions: list[SessionStats]) -> None:
         for model, stats in s.models.items():
             per_month[m]["models"][model].add(stats)
 
-    print("\n" + "=" * 100)
-    print("Monthly summary")
-    print("=" * 100)
-    hdr = f"{'Month':8}  {'Sess':>5}  {'Model':20}  {'Reqs':>6}  {'Input':>12}  {'Output':>12}  {'CacheR':>12}  {'CacheW':>12}  {'est AIC':>10}  {'actual AIC':>12}"
+    header("Monthly summary", 129)
+    hdr = f"{'Month':8}  {'Sess':>5}  {'Model':20}  {'Reqs':>6}  {'Input':>12}  {'Output':>12}  {'CacheR':>12}  {'CacheW':>12}  {'est AIC':>12}  {'actual AIC':>12}"
     print(hdr)
     print("-" * len(hdr))
     for month in sorted(per_month):
@@ -249,12 +256,12 @@ def print_monthly(sessions: list[SessionStats]) -> None:
             print(
                 f"{month:8}  {info['sessions']:>5}  {model:20}  {s.requests:>6}  "
                 f"{fmt_int(s.input)}  {fmt_int(s.output)}  {fmt_int(s.cache_read)}  "
-                f"{fmt_int(s.cache_write)}  {est_aic:10.3f}  "
+                f"{fmt_int(s.cache_write)}  {est_aic:12.3f}  "
                 f"{act_aic:12.3f}"
             )
+        print(f"{'-'*33:>129}")
         print(
-            f"{'':8}  {'':>5}  {'  TOTAL':20}  {'':>6}  {'':>12}  {'':>12}  {'':>12}  {'':>12}  "
-            f"{m_est:10.3f}  {m_act:12.3f}   (${m_est/100:.2f} est / ${m_act/100:.2f} actual)"
+            f"{'TOTAL':>101}  {m_est:12.3f}  {m_act:12.3f}   (${m_est/100:.2f} est / ${m_act/100:.2f} actual)"
         )
         print()
 
@@ -265,10 +272,8 @@ def print_totals(sessions: list[SessionStats]) -> None:
         for model, stats in s.models.items():
             totals[model].add(stats)
 
-    print("=" * 100)
-    print("Grand totals by model")
-    print("=" * 100)
-    hdr = f"{'Model':20}  {'Reqs':>6}  {'Input':>13}  {'Output':>13}  {'CacheR':>13}  {'CacheW':>13}  {'est AIC':>10}  {'actual AIC':>12}"
+    header("Grand totals by model", 116)
+    hdr = f"{'Model':20}  {'Reqs':>6}  {'Input':>13}  {'Output':>13}  {'CacheR':>13}  {'CacheW':>13}  {'est AIC':>12}  {'actual AIC':>12}"
     print(hdr)
     print("-" * len(hdr))
     total_est = total_act = 0.0
@@ -286,7 +291,7 @@ def print_totals(sessions: list[SessionStats]) -> None:
         act_aic = s.nano_aiu / 1e9
         total_est += est_aic
         total_act += act_aic
-        est_str = f"{est_aic:10.3f}" if est is not None else "     n/a  "
+        est_str = f"{est_aic:12.3f}" if est is not None else "       n/a  "
         print(
             f"{model:20}  {s.requests:>6}  {int(s.input):>13,}  {int(s.output):>13,}  "
             f"{int(s.cache_read):>13,}  {int(s.cache_write):>13,}  "
@@ -294,16 +299,16 @@ def print_totals(sessions: list[SessionStats]) -> None:
         )
     print("-" * len(hdr))
     print(
-        f"{'TOTAL':20}  {'':>6}  {'':>13}  {'':>13}  {'':>13}  {'':>13}  "
-        f"{total_est:10.3f}  {total_act:12.3f}"
+        f"{'TOTAL':>88}  {total_est:12.3f}  {total_act:12.3f}"
     )
-    print()
-    print(f"Sessions analysed:        {len(sessions)}")
+
+    header("Summary", 107)
+    print(f"Sessions analysed: {len(sessions)}")
     print(
-        f"Estimated cost (post-Jun pricing):  {total_est:>10,.2f} AIC  = ${total_est/100:>8,.2f} USD"
+        f"Estimated cost (post-June pricing):  {total_est:>10,.2f} AIC  = ${total_est/100:>8,.2f} USD"
     )
     print(
-        f"Actual charged (nano-AIU/1e9):      {total_act:>10,.2f} AIC  = ${total_act/100:>8,.2f} USD"
+        f"Actual charged (nano-AIU/1e9):       {total_act:>10,.2f} AIC  = ${total_act/100:>8,.2f} USD"
         f"   (only for sessions that recorded it)"
     )
 
@@ -327,8 +332,9 @@ def main() -> int:
         key=lambda s: (s.started or datetime.min.replace(tzinfo=timezone.utc))
     )
 
-    print("Per-session breakdown")
-    print("=" * 100)
+    print()
+    print("GitHub Copilot CLI cost estimation  --  (c) 2026 Martin van der Werff  (github at newinnovations.nl)")
+
     print_session_table(sessions)
     print_monthly(sessions)
     print_totals(sessions)
