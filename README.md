@@ -2,13 +2,19 @@
 
 Estimate what your local **GitHub Copilot CLI** sessions would cost under
 the post‑June token‑based pricing, and compare that estimate against the
-AI credits (AIC) that Copilot actually charged.
+AI credits (AIC) that Copilot actually charged. The script can also read
+**GitHub Copilot Chat sessions saved by VS Code**.
 
 Copilot CLI writes a per‑session log to `~/.copilot/session-state/<uuid>/events.jsonl`.
 Every session ends with a `session.shutdown` event whose `modelMetrics`
 field contains the cumulative token usage per model, and — for sessions
 recorded after Copilot started reporting it — the `totalNanoAiu` field with
 the actual AI credits billed (`1 AIC = 1e9 nano‑AIU = $0.01`).
+
+VS Code stores Copilot Chat sessions under its `User/workspaceStorage` and
+`User/globalStorage` directories. Those files do not include Copilot's
+server-side token metrics, so VS Code mode estimates tokens from the persisted
+local transcript content only.
 
 This script scans every session under `~/.copilot/session-state`, applies the
 public per‑model pricing to the token counters, and prints:
@@ -20,7 +26,8 @@ public per‑model pricing to the token counters, and prints:
 ## Requirements
 
 - Python 3.10+
-- A populated `~/.copilot/session-state/` directory (i.e. you've used the Copilot CLI at least once)
+- A populated `~/.copilot/session-state/` directory for CLI mode, or a VS Code
+  `User/workspaceStorage` directory for VS Code mode
 
 No third-party dependencies.
 
@@ -28,6 +35,53 @@ No third-party dependencies.
 
 ```bash
 python3 copilot_cli_costs.py
+```
+
+Read VS Code Copilot Chat sessions instead:
+
+```bash
+python3 copilot_cli_costs.py --source vscode
+```
+
+`--vscode` is a shortcut for `--source vscode`, and `--source all` scans both
+Copilot CLI and VS Code sessions.
+
+The script auto-detects common VS Code storage locations, including:
+
+```text
+Linux/remote:
+  ~/.vscode-server/data/User/workspaceStorage
+  ~/.vscode-remote/data/User/workspaceStorage
+  ~/.vscode/data/User/workspaceStorage
+
+Linux local:
+  ~/.config/Code/User/workspaceStorage
+  ~/.config/Code - Insiders/User/workspaceStorage
+
+macOS:
+  ~/Library/Application Support/Code/User/workspaceStorage
+  ~/Library/Application Support/Code - Insiders/User/workspaceStorage
+
+Windows:
+  %APPDATA%/Code/User/workspaceStorage
+  %APPDATA%/Code - Insiders/User/workspaceStorage
+```
+
+You can override discovery with either the VS Code `User` directory or the
+individual storage roots:
+
+```bash
+python3 copilot_cli_costs.py --vscode --vscode-user-dir ~/.config/Code/User
+python3 copilot_cli_costs.py --vscode --vscode-workspace-storage ~/.config/Code/User/workspaceStorage
+```
+
+When running from WSL against a Windows VS Code install, `--vscode-user` is a
+shortcut for the standard Windows Code user-data path:
+
+```bash
+python3 copilot_cli_costs.py --vscode --vscode-user martin
+# equivalent to:
+# python3 copilot_cli_costs.py --vscode --vscode-user-dir /mnt/c/Users/martin/AppData/Roaming/Code/User
 ```
 
 Example (truncated) output:
@@ -90,6 +144,15 @@ AIC = usd * 100
   Copilot writes with cumulative counters for the whole session.
 - Timestamps come from `sessionStartTime` in the shutdown event, falling
   back to the first event timestamp.
+- VS Code mode supports both legacy
+  `GitHub.copilot-chat/transcripts/*.jsonl` and newer
+  `chatSessions/*.json` / `chatSessions/*.jsonl` files, including empty-window
+  sessions in `globalStorage/emptyWindowChatSessions`.
+- VS Code mode uses a dependency-free token approximation from persisted
+  transcript content. It does not include hidden system prompts, server-side
+  context assembly, prompt caching, or actual billed `totalNanoAiu` values.
+- VS Code model IDs are shown without their persisted provider prefix, so
+  `copilot-auto/claude-haiku-4.5` appears as `claude-haiku-4.5`.
 
 ## License
 
