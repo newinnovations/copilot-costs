@@ -95,6 +95,7 @@ class ModelStats:
 @dataclass
 class SessionStats:
     session_id: str
+    summary: str | None = None
     started: datetime | None = None
     models: dict[str, ModelStats] = field(
         default_factory=lambda: defaultdict(ModelStats)
@@ -144,8 +145,40 @@ def parse_ts(s: str | None) -> datetime | None:
         return None
 
 
+def read_workspace_summary(session_dir: Path) -> str | None:
+    """Return the session label shown by `copilot resume`, when available."""
+    workspace = session_dir / "workspace.yaml"
+    if not workspace.exists():
+        return None
+
+    fields: dict[str, str] = {}
+    try:
+        with workspace.open() as fh:
+            for line in fh:
+                key, sep, value = line.partition(":")
+                if not sep:
+                    continue
+                key = key.strip()
+                if key in {"summary", "name"}:
+                    fields[key] = value.strip().strip("'\"")
+    except OSError:
+        return None
+
+    return fields.get("summary") or fields.get("name")
+
+
+def fixed_width(text: str, width: int) -> str:
+    text = " ".join(text.split())
+    if len(text) > width:
+        return text[: width - 3] + "..."
+    return f"{text:{width}}"
+
+
 def load_session(events_path: Path) -> SessionStats | None:
-    st = SessionStats(session_id=events_path.parent.name)
+    st = SessionStats(
+        session_id=events_path.parent.name,
+        summary=read_workspace_summary(events_path.parent),
+    )
     last_shutdown = None
     first_ts: datetime | None = None
     with events_path.open() as fh:
@@ -194,7 +227,7 @@ def header(title: str, length: int) -> None:
 
 def print_session_table(sessions: list[SessionStats]) -> None:
     header("Per-session breakdown", 159)
-    hdr = f"{'Date':10}  {'Session':36}  {'Model':20}  {'Reqs':>5}  {'Input':>12}  {'Output':>12}  {'CacheR':>12}  {'CacheW':>12}  {'est AIC':>11}  {'actual AIC':>11}"
+    hdr = f"{'Date':10}  {'Summary':36}  {'Model':20}  {'Reqs':>5}  {'Input':>12}  {'Output':>12}  {'CacheR':>12}  {'CacheW':>12}  {'est AIC':>11}  {'actual AIC':>11}"
     print(hdr)
     print("-" * len(hdr))
     for sess in sessions:
@@ -211,8 +244,9 @@ def print_session_table(sessions: list[SessionStats]) -> None:
             )
             est_aic = f"{est * 100:11.3f}" if est is not None else "       n/a "
             act_aic = f"{s.nano_aiu / 1e9:11.3f}" if s.nano_aiu else "        -  "
+            summary = fixed_width(sess.summary or sess.session_id, 36)
             print(
-                f"{date:10}  {sess.session_id:36}  {model:20}  {s.requests:>5}  "
+                f"{date:10}  {summary}  {model:20}  {s.requests:>5}  "
                 f"{fmt_int(s.input)}  {fmt_int(s.output)}  {fmt_int(s.cache_read)}  "
                 f"{fmt_int(s.cache_write)}  {est_aic}  {act_aic}"
             )

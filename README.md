@@ -13,7 +13,7 @@ the actual AI credits billed (`1 AIC = 1e9 nano‑AIU = $0.01`).
 This script scans every session under `~/.copilot/session-state`, applies the
 public per‑model pricing to the token counters, and prints:
 
-- a per‑session table (date, session id, model, requests, tokens, estimated AIC, actual AIC),
+- a per‑session table (date, session summary, model, requests, tokens, estimated AIC, actual AIC),
 - a monthly roll‑up, and
 - a grand total by model, in AIC and USD.
 
