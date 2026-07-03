@@ -29,6 +29,7 @@ import argparse
 import json
 import os
 import platform
+import re
 import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -323,16 +324,28 @@ def make_title(text: str, max_len: int = 60) -> str:
 
 
 def approx_tokens(parts: list[str]) -> int:
-    """Approximate persisted transcript tokens without third-party tokenizers."""
+    """A better dependency-free token approximation handling code and non-ASCII text."""
     if not parts:
         return 0
-    text = "\n".join(p for p in parts if p)
+
+    text = "\n".join(p for p in parts if p).strip()
     if not text:
         return 0
-    # A dependency-free approximation. It intentionally counts persisted local
-    # content only; hidden Copilot prompts/context are not present in VS Code's
-    # saved chat files.
-    return max(1, (len(text) + 3) // 4)
+
+    # 1. Fallback base character count
+    char_count = len(text)
+
+    # 2. Inflate for non-ASCII (Non-English characters take more bytes/tokens)
+    non_ascii_count = len(re.findall(r"[^\x00-\x7F]", text))
+    char_count += non_ascii_count * 2  # Rough weight adjustment
+
+    # 3. Deflate for code indentation (4 spaces usually collapse to 1 token)
+    # This finds groups of 4 spaces and treats them as 1 character instead of 4
+    four_spaces_groups = len(re.findall(r" {4}", text))
+    char_count -= four_spaces_groups * 3
+
+    # 4. Apply standard 4-character rule with ceiling math
+    return max(1, (char_count + 3) // 4)
 
 
 def find_resolved_model(value) -> str:
