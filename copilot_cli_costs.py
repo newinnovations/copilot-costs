@@ -242,8 +242,8 @@ def print_session_table(sessions: list[SessionStats]) -> None:
                     "cacheWriteTokens": s.cache_write,
                 },
             )
-            est_aic = f"{est * 100:11.3f}" if est is not None else "       n/a "
-            act_aic = f"{s.nano_aiu / 1e9:11.3f}" if s.nano_aiu else "        -  "
+            est_aic = f"{est * 100:11.2f}" if est is not None else "       n/a "
+            act_aic = f"{s.nano_aiu / 1e9:11.2f}" if s.nano_aiu else "        -  "
             summary = fixed_width(sess.summary or sess.session_id, 36)
             print(
                 f"{date:10}  {summary}  {model:20}  {s.requests:>5}  "
@@ -289,12 +289,12 @@ def print_monthly(sessions: list[SessionStats]) -> None:
             print(
                 f"{month:8}  {info['sessions']:>5}  {model:20}  {s.requests:>6}  "
                 f"{fmt_int(s.input)}  {fmt_int(s.output)}  {fmt_int(s.cache_read)}  "
-                f"{fmt_int(s.cache_write)}  {est_aic:12.3f}  "
-                f"{act_aic:12.3f}"
+                f"{fmt_int(s.cache_write)}  {est_aic:12.2f}  "
+                f"{act_aic:12.2f}"
             )
         print(f"{'-' * 33:>129}")
         print(
-            f"{'TOTAL':>101}  {m_est:12.3f}  {m_act:12.3f}   (${m_est / 100:.2f} est / ${m_act / 100:.2f} actual)"
+            f"{'TOTAL':>101}  {m_est:12.2f}  {m_act:12.2f}   (${m_est / 100:.2f} est / ${m_act / 100:.2f} actual)"
         )
         print()
 
@@ -324,14 +324,14 @@ def print_totals(sessions: list[SessionStats]) -> None:
         act_aic = s.nano_aiu / 1e9
         total_est += est_aic
         total_act += act_aic
-        est_str = f"{est_aic:12.3f}" if est is not None else "       n/a  "
+        est_str = f"{est_aic:12.2f}" if est is not None else "       n/a  "
         print(
             f"{model:20}  {s.requests:>6}  {int(s.input):>13,}  {int(s.output):>13,}  "
             f"{int(s.cache_read):>13,}  {int(s.cache_write):>13,}  "
-            f"{est_str}  {act_aic:12.3f}"
+            f"{est_str}  {act_aic:12.2f}"
         )
     print("-" * len(hdr))
-    print(f"{'TOTAL':>88}  {total_est:12.3f}  {total_act:12.3f}")
+    print(f"{'TOTAL':>88}  {total_est:12.2f}  {total_act:12.2f}")
 
     header("Summary", 107)
     print(f"Sessions analysed: {len(sessions)}")
