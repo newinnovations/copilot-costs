@@ -402,9 +402,36 @@ def vscode_report_model_id(model_id: str) -> str:
     return id
 
 
+def _finite_number(value) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)) and value == value and value not in (
+        float("inf"),
+        float("-inf"),
+    ):
+        return value
+    return None
+
+
 def add_vscode_request(
     st: SessionStats, request: dict, extra_response_parts: list, model_id: str
 ) -> None:
+    s = st.models[vscode_report_model_id(model_id)]
+    s.requests += 1
+
+    # Log-store sessions (VS Code >= 1.128) may carry exact per-request usage
+    # written by the server (promptTokens/completionTokens/copilotCredits).
+    # Prefer that over estimating from transcript text.
+    exact_input = _finite_number(request.get("promptTokens"))
+    exact_output = _finite_number(request.get("completionTokens"))
+    credits = _finite_number(request.get("copilotCredits"))
+    if (exact_input or 0) > 0 or (exact_output or 0) > 0 or (credits or 0) > 0:
+        s.input += int(exact_input or 0)
+        s.output += int(exact_output or 0)
+        if credits and credits > 0:
+            s.nano_aiu += round(credits * 1_000_000_000)
+        return
+
     user_parts: list[str] = []
     message_text = request.get("message", {}).get("text")
     if isinstance(message_text, str) and message_text:
@@ -437,17 +464,15 @@ def add_vscode_request(
             if len(serialized) > 2:
                 assistant_parts.append(serialized)
 
-    s = st.models[vscode_report_model_id(model_id)]
     s.input += approx_tokens(user_parts)
     s.output += approx_tokens(assistant_parts)
-    s.requests += 1
 
 
-def load_vscode_flat_session(path: Path) -> SessionStats | None:
-    with path.open() as fh:
-        data = json.load(fh)
+def _build_vscode_session_from_data(
+    data: dict, fallback_session_id: str
+) -> SessionStats | None:
     st = SessionStats(
-        session_id=data.get("sessionId") or path.stem,
+        session_id=data.get("sessionId") or fallback_session_id,
         summary=normalize_title(data.get("customTitle", "")) or None,
         source="vscode",
     )
@@ -472,98 +497,117 @@ def load_vscode_flat_session(path: Path) -> SessionStats | None:
     return st
 
 
-def load_vscode_log_session(path: Path) -> SessionStats | None:
-    st = SessionStats(session_id=path.stem, source="vscode")
-    requests: list[dict] = []
-    extra_response_parts: dict[int, list] = defaultdict(list)
-    request_models: dict[int, str] = {}
-
+def load_vscode_flat_session(path: Path) -> SessionStats | None:
     with path.open() as fh:
-        for line_number, line in enumerate(fh, 1):
-            if not line.strip():
-                continue
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError as e:
-                raise ValueError(
-                    f"Failed to parse JSON in {path} at line {line_number}: {e}"
-                ) from e
-            kind = entry.get("kind")
-            key = entry.get("k")
-            value = entry.get("v")
+        data = json.load(fh)
+    return _build_vscode_session_from_data(data, path.stem)
 
-            if kind == 0 and isinstance(value, dict):
-                if isinstance(value.get("creationDate"), (int, float)):
-                    st.started = datetime.fromtimestamp(
-                        value["creationDate"] / 1000, tz=timezone.utc
-                    )
-                if isinstance(value.get("sessionId"), str) and value["sessionId"]:
-                    st.session_id = value["sessionId"]
-                base_requests = (
-                    value.get("requests", [])
-                    if isinstance(value.get("requests"), list)
-                    else []
-                )
-                for offset, request in enumerate(base_requests):
-                    if isinstance(request, dict):
-                        request_models[len(requests) + offset] = (
-                            effective_request_model_id(request)
-                        )
-                requests.extend(r for r in base_requests if isinstance(r, dict))
-                continue
 
-            if kind == 1:
-                if (
-                    isinstance(key, list)
-                    and len(key) == 3
-                    and key[0] == "requests"
-                    and isinstance(key[1], int)
-                    and key[2] == "result"
-                    and request_models.get(key[1]) == "copilot/auto"
-                ):
-                    request_models[key[1]] = effective_model_id(
-                        "copilot/auto", find_resolved_model(value)
-                    )
-                if (
-                    isinstance(key, list)
-                    and key == ["customTitle"]
-                    and isinstance(value, str)
-                    and value.strip()
-                ):
-                    st.summary = normalize_title(value)
-                continue
+_UNSAFE_KEYS = {"__proto__", "constructor", "prototype"}
 
-            if kind == 2 and isinstance(key, list) and isinstance(value, list):
-                if key == ["requests"]:
-                    for offset, request in enumerate(value):
-                        if isinstance(request, dict):
-                            request_models[len(requests) + offset] = (
-                                effective_request_model_id(request)
-                            )
-                    requests.extend(r for r in value if isinstance(r, dict))
-                elif (
-                    len(key) == 3
-                    and key[0] == "requests"
-                    and isinstance(key[1], int)
-                    and key[2] == "response"
-                ):
-                    extra_response_parts[key[1]].extend(value)
 
-    for index, request in enumerate(requests):
-        add_vscode_request(
-            st,
-            request,
-            extra_response_parts.get(index, []),
-            request_models.get(index) or effective_request_model_id(request),
-        )
-
-    if not st.models:
+def _walk_to_parent(state, keys: list):
+    """Walk all but the last key of a mutation-log path, returning the
+    container (dict or list) that owns the final key, or None if the path
+    doesn't resolve to a container."""
+    if any(isinstance(k, str) and k in _UNSAFE_KEYS for k in keys):
         return None
-    if not st.summary:
-        first_text = requests[0].get("message", {}).get("text") if requests else ""
-        if isinstance(first_text, str):
-            st.summary = normalize_title(first_text)
-    return st
+    current = state
+    for k in keys[:-1]:
+        if isinstance(current, dict):
+            current = current.get(k)
+        elif isinstance(current, list) and isinstance(k, int) and 0 <= k < len(current):
+            current = current[k]
+        else:
+            return None
+    return current if isinstance(current, (dict, list)) else None
+
+
+def _apply_log_set(state, keys: list | None, value) -> None:
+    if not keys:
+        return
+    parent = _walk_to_parent(state, keys)
+    if parent is None:
+        return
+    key = keys[-1]
+    if isinstance(parent, list):
+        # arrays only ever take numeric indices; a stray string key could
+        # otherwise blow the array up via a huge/invalid index
+        if isinstance(key, int) and 0 <= key <= len(parent):
+            if key == len(parent):
+                parent.append(value)
+            else:
+                parent[key] = value
+    elif isinstance(key, str) and key not in _UNSAFE_KEYS:
+        parent[key] = value
+
+
+def _apply_log_push(state, keys: list | None, values, start_index) -> None:
+    if not keys:
+        return
+    parent = _walk_to_parent(state, keys)
+    if parent is None:
+        return
+    array_key = keys[-1]
+    if isinstance(parent, dict):
+        if isinstance(array_key, str) and array_key in _UNSAFE_KEYS:
+            return
+        arr = parent.get(array_key)
+        if not isinstance(arr, list):
+            arr = []
+    elif isinstance(parent, list) and isinstance(array_key, int) and 0 <= array_key < len(parent):
+        arr = parent[array_key]
+        if not isinstance(arr, list):
+            arr = []
+    else:
+        return
+    # upstream only ever writes start_index <= len(arr) (truncation); clamp
+    # defensively against a larger index from a corrupt line
+    if isinstance(start_index, int) and 0 <= start_index < len(arr):
+        del arr[start_index:]
+    if isinstance(values, list) and values:
+        arr.extend(values)
+    parent[array_key] = arr
+
+
+def _replay_session_log(content: str) -> dict | None:
+    """Replay a VS Code chat session mutation log (.jsonl, VS Code >= 1.128)
+    into its final state. Line format: {kind:0,v} initial state, {kind:1,k,v}
+    set, {kind:2,k,v,i} array push (truncating to index i first), {kind:3,k}
+    delete. Malformed lines/operations are skipped so we still recover as
+    much of the session as possible."""
+    state = None
+    for line in content.split("\n"):
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        kind = entry.get("kind")
+        key = entry.get("k")
+        value = entry.get("v")
+        try:
+            if kind == 0:
+                state = value
+            elif kind == 1:
+                _apply_log_set(state, key, value)
+            elif kind == 2:
+                _apply_log_push(state, key, value, entry.get("i"))
+            elif kind == 3:
+                _apply_log_set(state, key, None)
+        except Exception:
+            continue
+    return state if isinstance(state, dict) else None
+
+
+def load_vscode_log_session(path: Path) -> SessionStats | None:
+    with path.open() as fh:
+        content = fh.read()
+    data = _replay_session_log(content)
+    if not data or not isinstance(data.get("requests"), list):
+        return None
+    return _build_vscode_session_from_data(data, path.stem)
 
 
 def load_vscode_legacy_transcript(path: Path) -> SessionStats | None:
@@ -611,19 +655,27 @@ def load_vscode_legacy_transcript(path: Path) -> SessionStats | None:
 
 def discover_vscode_session_files(
     workspace_storage: Path, global_storage: Path | None
-) -> list[tuple[Path, str]]:
+) -> list[tuple[Path, str, Path | None]]:
     if not workspace_storage.is_dir():
         raise FileNotFoundError(
             f"workspaceStorage directory not found: {workspace_storage}"
         )
-    by_session_id: dict[str, tuple[Path, str]] = {}
+    by_session_id: dict[str, tuple[Path, str, Path | None]] = {}
 
     def add_files(directory: Path, suffix: str, fmt: str) -> None:
         if not directory.is_dir():
             return
         for entry in directory.iterdir():
             if entry.is_file() and entry.name.endswith(suffix):
-                by_session_id[entry.name[: -len(suffix)]] = (entry, fmt)
+                session_id = entry.name[: -len(suffix)]
+                fallback = None
+                if fmt == "new-jsonl":
+                    # remember the sibling .json this .jsonl shadows, so we
+                    # can fall back to it if the log turns out empty/corrupt
+                    prev = by_session_id.get(session_id)
+                    if prev and prev[1] == "new-json":
+                        fallback = prev[0]
+                by_session_id[session_id] = (entry, fmt, fallback)
 
     for workspace_dir in sorted(p for p in workspace_storage.iterdir() if p.is_dir()):
         add_files(
@@ -639,6 +691,7 @@ def discover_vscode_session_files(
         add_files(empty_window, ".json", "new-json")
         add_files(empty_window, ".jsonl", "new-jsonl")
 
+
     return sorted(by_session_id.values(), key=lambda item: str(item[0]))
 
 
@@ -646,13 +699,21 @@ def load_vscode_sessions(
     workspace_storage: Path, global_storage: Path | None
 ) -> list[SessionStats]:
     sessions: list[SessionStats] = []
-    for path, fmt in discover_vscode_session_files(workspace_storage, global_storage):
+    for path, fmt, fallback in discover_vscode_session_files(
+        workspace_storage, global_storage
+    ):
         if fmt == "legacy":
             session = load_vscode_legacy_transcript(path)
         elif fmt == "new-json":
             session = load_vscode_flat_session(path)
         else:
             session = load_vscode_log_session(path)
+            if session is None and fallback is not None:
+                # Empty/corrupt/stale .jsonl (crash-truncated migration,
+                # downgrade, useLogSessionStorage turned off) — fall back to
+                # the sibling flat .json it shadowed. No double-count risk:
+                # the .jsonl contributed zero records.
+                session = load_vscode_flat_session(fallback)
         if session:
             sessions.append(session)
     return sessions
