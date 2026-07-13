@@ -47,6 +47,9 @@ PRICING: dict[str, dict[str, float]] = {
     "gpt-5.4-mini": {"in": 0.75, "cache": 0.075, "out": 4.50},
     "gpt-5.4-nano": {"in": 0.20, "cache": 0.02, "out": 1.25},
     "gpt-5.5": {"in": 5.00, "cache": 0.50, "out": 30.00},
+    "gpt-5.6-sol": {"in": 5.0, "cache": 0.50, "out": 30.0},
+    "gpt-5.6-terra": {"in": 2.5, "cache": 0.25, "out": 15.0},
+    "gpt-5.6-luna": {"in": 1.0, "cache": 0.10, "out": 6.0},
     # Anthropic
     "claude-haiku-4.5": {"in": 1.00, "cache": 0.10, "cw": 1.25, "out": 5.00},
     "claude-sonnet-4": {"in": 3.00, "cache": 0.30, "cw": 3.75, "out": 15.00},
@@ -405,9 +408,14 @@ def vscode_report_model_id(model_id: str) -> str:
 def _finite_number(value) -> float | None:
     if isinstance(value, bool):
         return None
-    if isinstance(value, (int, float)) and value == value and value not in (
-        float("inf"),
-        float("-inf"),
+    if (
+        isinstance(value, (int, float))
+        and value == value
+        and value
+        not in (
+            float("inf"),
+            float("-inf"),
+        )
     ):
         return value
     return None
@@ -555,7 +563,11 @@ def _apply_log_push(state, keys: list | None, values, start_index) -> None:
         arr = parent.get(array_key)
         if not isinstance(arr, list):
             arr = []
-    elif isinstance(parent, list) and isinstance(array_key, int) and 0 <= array_key < len(parent):
+    elif (
+        isinstance(parent, list)
+        and isinstance(array_key, int)
+        and 0 <= array_key < len(parent)
+    ):
         arr = parent[array_key]
         if not isinstance(arr, list):
             arr = []
@@ -690,7 +702,6 @@ def discover_vscode_session_files(
         empty_window = global_storage / "emptyWindowChatSessions"
         add_files(empty_window, ".json", "new-json")
         add_files(empty_window, ".jsonl", "new-jsonl")
-
 
     return sorted(by_session_id.values(), key=lambda item: str(item[0]))
 
