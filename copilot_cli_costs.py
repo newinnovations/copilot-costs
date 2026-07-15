@@ -194,7 +194,7 @@ def read_workspace_summary(session_dir: Path) -> str | None:
 
     fields: dict[str, str] = {}
     try:
-        with workspace.open() as fh:
+        with workspace.open(encoding="utf-8") as fh:
             for line in fh:
                 key, sep, value = line.partition(":")
                 if not sep:
@@ -223,7 +223,7 @@ def load_cli_session(events_path: Path) -> SessionStats | None:
     )
     last_shutdown = None
     first_ts: datetime | None = None
-    with events_path.open() as fh:
+    with events_path.open(encoding="utf-8") as fh:
         for line in fh:
             try:
                 ev = json.loads(line)
@@ -506,7 +506,7 @@ def _build_vscode_session_from_data(
 
 
 def load_vscode_flat_session(path: Path) -> SessionStats | None:
-    with path.open() as fh:
+    with path.open(encoding="utf-8") as fh:
         data = json.load(fh)
     return _build_vscode_session_from_data(data, path.stem)
 
@@ -614,7 +614,7 @@ def _replay_session_log(content: str) -> dict | None:
 
 
 def load_vscode_log_session(path: Path) -> SessionStats | None:
-    with path.open() as fh:
+    with path.open(encoding="utf-8") as fh:
         content = fh.read()
     data = _replay_session_log(content)
     if not data or not isinstance(data.get("requests"), list):
@@ -625,7 +625,7 @@ def load_vscode_log_session(path: Path) -> SessionStats | None:
 def load_vscode_legacy_transcript(path: Path) -> SessionStats | None:
     st = SessionStats(session_id=path.stem, source="vscode")
     model = "copilot/vscode-transcript"
-    with path.open() as fh:
+    with path.open(encoding="utf-8") as fh:
         for line_number, line in enumerate(fh, 1):
             if not line.strip():
                 continue
